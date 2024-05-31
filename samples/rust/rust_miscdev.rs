@@ -12,7 +12,9 @@
 //! / # sudo cat /dev/rust_misc  -> Hello
 //! 
 
-use kernel::prelude::*;
+use core::ops::Deref;
+use core::result::Result::Ok;
+use kernel::{prelude::*};
 use kernel::{
     file::{self, File},
     io_buffer::{IoBufferReader, IoBufferWriter},
@@ -27,7 +29,7 @@ use kernel::{
 module! {
     type: RustMiscDev,
     name: "rust_miscdev",
-    author: "i dont konw",
+    author: "xik",
     description: "Rust exercise 002",
     license: "GPL",
 }
@@ -64,8 +66,7 @@ impl file::Operations for RustFile {
 
     fn open(_shared: &Arc<RustMiscdevData>, _file: &file::File) -> Result<Self::Data> {
         pr_info!("open in miscdevice\n",);
-        //TODO
-        todo!()
+        Ok(Arc::clone(_shared))
     }
 
     fn read(
@@ -75,9 +76,19 @@ impl file::Operations for RustFile {
         _offset: u64,
     ) -> Result<usize> {
         pr_info!("read in miscdevice\n");
-        //TODO
-        todo!()
         
+        let inner = _shared.deref().inner.lock();
+        let offset = _offset as usize;
+        // let data = &inner[offset..];
+        let left_size = inner.len()-offset;
+        let mut data_len = _writer.len();
+        // not enough data to read
+        if left_size < _writer.len(){
+            data_len = left_size;
+        }
+        // write to io buffer
+        let _ = _writer.write_slice(&inner[offset..offset+data_len]);
+        Ok(data_len)
     }
 
     fn write(
@@ -87,9 +98,18 @@ impl file::Operations for RustFile {
         _offset: u64,
     ) -> Result<usize> {
         pr_info!("write in miscdevice\n");
-        //TODO
-        todo!()
-
+        let mut inner = _shared.deref().inner.lock();
+        let offset = _offset as usize;
+        let data =&inner[offset..];
+        // not enough place to write
+        let reader_len =  _reader.len();
+        if data.len() < reader_len {
+            // pr_info!("write efault {} - {}\n",_reader.len(),data.len());
+            return Err(EFAULT);
+        }
+        // read from io buffer
+        let _result = _reader.read_slice(&mut inner[offset..offset+_reader.len()]);
+        Ok(reader_len)
     }
 
     fn release(_data: Self::Data, _file: &File) {
