@@ -6,8 +6,8 @@
 #include <linux/cdev.h>
 #include <asm/io.h>
 
-// #define BCM2837_GPIO_BASE             0x3F200000  // Raspberry Pi 3B+
-#define BCM2837_GPIO_BASE             0xFE200000  // Raspberry Pi 4B
+#define BCM2837_GPIO_BASE             0x3F200000  // Raspberry Pi 3B+
+// #define BCM2837_GPIO_BASE             0xFE200000  // Raspberry Pi 4B
 #define BCM2837_GPIO_FSEL0_OFFSET     0x0   // GPIO功能选择寄存器0
 #define BCM2837_GPIO_SET0_OFFSET      0x1C  // GPIO置位寄存器0
 #define BCM2837_GPIO_CLR0_OFFSET      0x28  // GPIO清零寄存器0
