@@ -3,7 +3,7 @@
 //! Driver for Raspi GPIO LED.
 
 #![no_std]
-use led_gpio::RpiGpioPort;
+use led_gpio::{RpiGpio,GpioFunction};
 // TODO
 // 参考 drivers/gpio/exercise-3-gpio/gpio-sample-rpbled.c代码
 // C代码里面用到的字符设备，还是用练习二的Msicdev来实现就可以了
@@ -43,18 +43,18 @@ const GPIO_SIZE:u64 = 0xB4;
 struct RustMiscdevData {
     #[pin]
     inner: Mutex<[u8;GLOBALMEM_SIZE]>,
-    rpi_gpio_port: RpiGpioPort
+    #[pin]
+    rpi_gpio: Mutex<RpiGpio>
 }
 
 impl RustMiscdevData {
     fn try_new() -> Result<Arc<Self>>{
         pr_info!("rust miscdevice for gpio created\n");
         let mapped_base = unsafe { bindings::ioremap(BCM2837_GPIO_BASE, GPIO_SIZE) };
-        pr_info!("mapped GPIO base addr : {}\n",mapped_base as *mut u8 as usize);
         Ok(Arc::pin_init(
             pin_init!(Self {
                 inner <- new_mutex!([0u8;GLOBALMEM_SIZE]),
-                rpi_gpio_port: RpiGpioPort::new(mapped_base as *mut u8)
+                rpi_gpio <- new_mutex!(RpiGpio::new(mapped_base as *mut u8))
             })
         )?)
     }
@@ -113,15 +113,13 @@ impl file::Operations for RustFile {
         }
         // read from io buffer
         let _result = _reader.read_slice(&mut inner[offset..offset+_reader.len()]);
-        let mut rpi_gpio_port = _shared.deref().rpi_gpio_port;
+        let mut rpi_gpio = _shared.deref().rpi_gpio.lock();
         match inner[offset] {
-            48 => {
-                // pr_info!("Number: {}\n", 0);
-                let _ = rpi_gpio_port.set_value(17,0);
+            b'0' => {
+                let _ = rpi_gpio.set_value(17,0);
             }
-            49 => {
-                // pr_info!("Number: {}\n", 1);
-                let _ = rpi_gpio_port.set_value(17,1);
+            b'1' => {
+                let _ = rpi_gpio.set_value(17,1);
             }
             _ => {
                 return Err(EINVAL);
@@ -144,6 +142,7 @@ impl kernel::Module for RustMiscDev {
         pr_info!("Rust miscdevice device for gpio (init)\n");
 
         let data: Arc<RustMiscdevData> = RustMiscdevData::try_new()?;
+        let _ =  (*data).rpi_gpio.lock().gpio_init();
 
         let misc_reg = miscdev::Registration::new_pinned(fmt!("rust_misc_gpio"), data)?;
 

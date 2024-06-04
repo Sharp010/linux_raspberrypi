@@ -10,14 +10,23 @@
 
 
 use core::ptr::NonNull;
-pub(crate) use osl::error::Result;
 const __LOG_PREFIX: &[u8] = b"gpio\0";
-use osl::log_info;
 use tock_registers::{
     interfaces::{Readable, Writeable},
     registers::{ReadWrite,ReadOnly,WriteOnly},
 };
 
+#[allow(missing_docs)]
+pub enum GpioFunction {
+    Input = 0b000,
+    Output = 0b001,
+    Alt0 = 0b100,
+    Alt1 = 0b101,
+    Alt2 = 0b110,
+    Alt3 = 0b111,
+    Alt4 = 0b010,
+    Alt5 = 0b011,
+}
 
 #[repr(C)]
 #[allow(non_snake_case)]
@@ -51,16 +60,17 @@ pub(crate) struct RPiGpioRegisters {
 }
 
 
-
+#[allow(missing_docs)]
 #[derive(Copy, Clone)]
-pub struct RpiGpioPort {
+pub struct RpiGpio {
     regs: NonNull<RPiGpioRegisters>,
 }
 
-unsafe impl Send for RpiGpioPort {}
-unsafe impl Sync for RpiGpioPort {}
+unsafe impl Send for RpiGpio {}
+unsafe impl Sync for RpiGpio {}
 
-impl RpiGpioPort {
+impl RpiGpio {
+    /// 
     pub const fn new(base_addr: *mut u8) -> Self {
         
         Self {
@@ -68,30 +78,53 @@ impl RpiGpioPort {
         }
     }
 
+    /// 
     const fn regs(&self) -> &RPiGpioRegisters {
         unsafe { self.regs.as_ref() }
     }
 
     /// 
-    pub fn direction_output(&mut self, offset: u32) -> Result<()> {
+    pub fn set_function(&mut self, offset: u32, function: GpioFunction)  {
         let fsel_index = offset as usize / 10;
         let fsel_shift = (offset % 10) * 3;
         let mut fsel_value = self.regs().GPFSEL[fsel_index].get();
-        // 保持其他位不变
-        // 对应引脚的功能选择位变成001
+        // 保持其他位不变，设置引脚功能
         fsel_value &= !(0b111 << fsel_shift);
-        fsel_value |= 0b001 << fsel_shift; 
+        fsel_value |= (function as u32) << fsel_shift; 
         self.regs().GPFSEL[fsel_index].set(fsel_value);
-        Ok(())
     }
 
     /// 
-    pub fn set_value(&mut self, offset: u32, value: u32) -> Result<()> {
+    pub fn get_function(&self, offset: u32) -> u32 {
+        let fsel_index = offset as usize / 10;
+        let fsel_shift = (offset % 10) * 3;
+        let fsel_value = self.regs().GPFSEL[fsel_index].get();
+        (fsel_value >> fsel_shift) & 0b111
+    }
+
+    /// 
+    pub fn set_value(&mut self, offset: u32, value: u32) {
         if value == 1 {
             self.regs().GPSET[offset as usize / 32].set(1 << (offset % 32));
         } else {
             self.regs().GPCLR[offset as usize / 32].set(1 << (offset % 32));
         }
-        Ok(())
+    }
+
+    /// 
+    pub fn read_value(&self, offset: u32) -> u32 {
+        let level_reg_index = offset as usize / 32;
+        // 掩码
+        let level_bit = 1 << (offset % 32);
+        let level_reg_value = self.regs().GPLEV[level_reg_index].get();
+        (level_reg_value & level_bit) >> (offset % 32)
+    }
+
+    ///
+    pub fn gpio_init(&mut self) {
+        self.set_function(2, GpioFunction::Output);
+        self.set_function(3, GpioFunction::Output);
+        self.set_function(4, GpioFunction::Output);
+        self.set_function(17, GpioFunction::Output);
     }
 }
